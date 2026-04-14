@@ -4,9 +4,14 @@ import sys
 from pathlib import Path
 from box import Box  # type: ignore
 
+from ftpsync.util import set_pyftpsync_logger  # type: ignore
+
 from .client import WebspaceClient
 
 __all__ = ["WebspaceClient"]
+
+# Configure pyftpsync to log to stdout/stderr
+set_pyftpsync_logger(None)
 
 
 def load_secrets(path: str = "config/secrets.yaml") -> Box:
