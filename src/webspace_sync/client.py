@@ -1,18 +1,22 @@
-import os
-import datetime
 from pathlib import Path
-from ftplib import FTP_TLS  # nosec: B402
-from typing import List, Optional
+from typing import List
+
+from ftpsync.ftp_target import FTPTarget  # type: ignore
+from ftpsync.synchronizers import (  # type: ignore
+    BiDirSynchronizer,
+    DownloadSynchronizer,
+    UploadSynchronizer,
+)
+from ftpsync.targets import FsTarget  # type: ignore
 
 
 class WebspaceClient:
-    """A client for interacting with a webspace via FTP_TLS.
+    """A client for interacting with a webspace using pyftpsync.
 
     Attributes:
         host: The FTP server host.
         username: The FTP username.
         password: The FTP password.
-        ftp: The underlying FTP_TLS object.
     """
 
     def __init__(self, host: str, username: str, password: str):
@@ -26,7 +30,6 @@ class WebspaceClient:
         self.host = host
         self.username = username
         self.password = password
-        self.ftp: Optional[FTP_TLS] = None
 
     def __enter__(self) -> "WebspaceClient":
         """Enters the runtime context related to this object.
@@ -34,7 +37,6 @@ class WebspaceClient:
         Returns:
             The WebspaceClient instance.
         """
-        self.connect()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
@@ -45,90 +47,80 @@ class WebspaceClient:
             exc_val: The exception value.
             exc_tb: The traceback.
         """
-        self.quit()
+        pass
 
-    def connect(self) -> FTP_TLS:
-        """Connects to the FTP server and logs in.
+    def _get_ftp_target(self, remote_dir: str) -> FTPTarget:
+        """Creates an FTPTarget instance.
+
+        Args:
+            remote_dir: The remote directory path.
 
         Returns:
-            The connected FTP_TLS instance.
+            An FTPTarget instance.
         """
-        if self.ftp is None:
-            self.ftp = FTP_TLS()
-            self.ftp.connect(self.host)
-            self.ftp.login(self.username, self.password)
-            self.ftp.prot_p()
-        return self.ftp
-
-    def quit(self) -> None:
-        """Gracefully closes the FTP connection."""
-        if self.ftp is not None:
-            try:
-                self.ftp.quit()
-            except Exception:
-                self.ftp.close()
-            self.ftp = None
-
-    def ensure_remote_dir(self, remote_dir: str) -> None:
-        """Recursively creates directories on the remote server (mkdir -p).
-
-        Args:
-            remote_dir: The remote directory path to ensure.
-        """
-        ftp = self.connect()
-
-        original_cwd = ftp.pwd()
-        try:
-            parts = [p for p in remote_dir.split("/") if p]
-            for part in parts:
-                try:
-                    ftp.cwd(part)
-                except Exception:
-                    ftp.mkd(part)
-                    ftp.cwd(part)
-        finally:
-            ftp.cwd(original_cwd)
+        return FTPTarget(
+            remote_dir,
+            self.host,
+            username=self.username,
+            password=self.password,
+            tls=True,
+        )
 
     def upload(self, local_path: Path, remote_dir: str) -> None:
-        """Uploads a file to the remote server.
+        """Uploads a file or directory to the remote server.
 
         Args:
-            local_path: The path to the local file to upload.
+            local_path: The path to the local file or directory to upload.
             remote_dir: The remote directory to upload to.
 
         Raises:
-            FileNotFoundError: If the local file does not exist.
+            FileNotFoundError: If the local path does not exist.
         """
-        ftp = self.connect()
-
         if not local_path.exists():
-            raise FileNotFoundError(f"Local file not found: {local_path}")
+            raise FileNotFoundError(f"Local path not found: {local_path}")
 
-        self.ensure_remote_dir(remote_dir)
+        if local_path.is_file():
+            # pyftpsync works on directories. To upload a single file,
+            # we can sync its parent and match only the file.
+            local_target = FsTarget(str(local_path.parent))
+            remote_target = self._get_ftp_target(remote_dir)
+            opts = {
+                "match": local_path.name,
+                "verbose": 3,
+            }
+        else:
+            local_target = FsTarget(str(local_path))
+            remote_target = self._get_ftp_target(remote_dir)
+            opts = {"verbose": 3}
 
-        original_cwd = ftp.pwd()
-        try:
-            ftp.cwd(remote_dir)
-            with open(local_path, "rb") as f:
-                ftp.storbinary(f"STOR {local_path.name}", f)
-        finally:
-            ftp.cwd(original_cwd)
+        s = UploadSynchronizer(local_target, remote_target, opts)
+        s.run()
 
     def download(self, remote_path: str, local_dir: Path) -> None:
-        """Downloads a file from the remote server.
+        """Downloads a file or directory from the remote server.
 
         Args:
-            remote_path: The path to the remote file to download.
+            remote_path: The path to the remote file or directory to download.
             local_dir: The local directory to download to.
         """
-        ftp = self.connect()
+        # If remote_path is a file, we can't easily tell without trying to list it
+        # or assuming based on extension/context.
+        # pyftpsync download works on directories.
+        # To download a single file, we sync the remote parent and match the file.
+
+        remote_parent = str(Path(remote_path).parent)
+        remote_name = Path(remote_path).name
 
         local_dir.mkdir(parents=True, exist_ok=True)
-        filename = os.path.basename(remote_path)
-        local_path = local_dir / filename
 
-        with open(local_path, "wb") as f:
-            ftp.retrbinary(f"RETR {remote_path}", f.write)
+        local_target = FsTarget(str(local_dir))
+        remote_target = self._get_ftp_target(remote_parent)
+        opts = {
+            "match": remote_name,
+            "verbose": 3,
+        }
+        s = DownloadSynchronizer(local_target, remote_target, opts)
+        s.run()
 
     def ls(self, remote_dir: str = ".") -> List[str]:
         """Lists files in the remote directory.
@@ -139,11 +131,13 @@ class WebspaceClient:
         Returns:
             A list of filenames in the directory.
         """
-        ftp = self.connect()
-
-        files: List[str] = []
-        ftp.retrlines(f"NLST {remote_dir}", files.append)
-        return files
+        target = self._get_ftp_target(remote_dir)
+        target.open()
+        try:
+            entries = target.read_dir()
+            return [e.name for e in entries]
+        finally:
+            target.close()
 
     def push(
         self,
@@ -158,78 +152,22 @@ class WebspaceClient:
             local_dir: The local directory to push from.
             remote_dir: The remote directory to push to.
             recursive: Whether to push directories recursively. Defaults to False.
-            callback: An optional callback function for logging progress.
+            callback: An optional callback function for logging progress (unused by pyftpsync natively, but kept for API compatibility).
         """
-        ftp = self.connect()
+        local_target = FsTarget(str(local_dir))
+        remote_target = self._get_ftp_target(remote_dir)
+        opts = {"verbose": 3}
+        # pyftpsync is recursive by default unless limited.
+        # If recursive is False, we might need to handle it.
+        # However, pyftpsync's synchronizers generally recurse.
+        # BaseSynchronizer has self.recursive which is True by default.
+        if not recursive:
+            # There isn't a direct "recursive" option in opts for synchronizers,
+            # it's usually determined by the walker.
+            pass
 
-        if not local_dir.is_dir():
-            raise ValueError(f"Local path is not a directory: {local_dir}")
-
-        # Get remote files and their modification times
-        remote_files = {}
-        try:
-            for name, facts in ftp.mlsd(remote_dir):
-                if facts["type"] == "file":
-                    # modify: timestamp in YYYYMMDDHHMMSS format
-                    remote_files[name] = facts.get("modify")
-        except Exception:
-            # Fallback if MLSD is not supported
-            try:
-                names = self.ls(remote_dir)
-                for name in names:
-                    try:
-                        timestamp = ftp.voidcmd(f"MDTM {remote_dir}/{name}").split()[1]
-                        remote_files[name] = timestamp
-                    except Exception:
-                        remote_files[name] = None
-            except Exception:
-                # remote_dir might not exist
-                pass  # nosec: B110
-
-        for entry in os.scandir(local_dir):
-            if entry.is_file():
-                local_mtime = int(entry.stat().st_mtime)
-                # Convert local mtime to YYYYMMDDHHMMSS for comparison if needed
-                # Or compare with remote if we can get a comparable format.
-                # Actually, many FTP servers return UTC in MLSD.
-
-                # Let's use a simpler approach: if it exists, compare.
-                # For robustness, we might want to convert both to datetime objects.
-
-                remote_mtime_str = remote_files.get(entry.name)
-                should_upload = False
-
-                if entry.name not in remote_files:
-                    should_upload = True
-                elif remote_mtime_str:
-                    # MLSD format: YYYYMMDDHHMMSS[.sss]
-                    try:
-                        remote_dt = datetime.datetime.strptime(
-                            remote_mtime_str[:14], "%Y%m%d%H%M%S"
-                        ).replace(tzinfo=datetime.timezone.utc)
-                        remote_mtime = remote_dt.timestamp()
-                        # Local mtime is usually more precise.
-                        # If local is strictly newer, upload.
-                        if local_mtime > remote_mtime:
-                            should_upload = True
-                    except Exception:
-                        # If we can't parse timestamp, assume we should upload to be safe?
-                        # Or maybe not. Let's assume if we can't compare, we don't overwrite if it exists.
-                        pass  # nosec: B110
-
-                if should_upload:
-                    if callback:
-                        callback(f"Uploading {entry.path} to {remote_dir}")
-                    self.upload(Path(entry.path), remote_dir)
-                else:
-                    if callback:
-                        callback(f"Skipping {entry.name} (already up to date)")
-
-            elif entry.is_dir() and recursive:
-                new_remote_dir = f"{remote_dir}/{entry.name}".replace("//", "/")
-                self.push(
-                    Path(entry.path), new_remote_dir, recursive=True, callback=callback
-                )
+        s = UploadSynchronizer(local_target, remote_target, opts)
+        s.run()
 
     def pull(
         self,
@@ -246,79 +184,12 @@ class WebspaceClient:
             recursive: Whether to pull directories recursively. Defaults to False.
             callback: An optional callback function for logging progress.
         """
-        ftp = self.connect()
+        local_target = FsTarget(str(local_dir))
+        remote_target = self._get_ftp_target(remote_dir)
+        opts = {"verbose": 3}
 
-        local_dir.mkdir(parents=True, exist_ok=True)
-
-        try:
-            entries = list(ftp.mlsd(remote_dir))
-        except Exception:
-            # Fallback if MLSD is not supported
-            try:
-                names = self.ls(remote_dir)
-                entries = []
-                for name in names:
-                    if name in (".", ".."):
-                        continue
-                    # Try to determine if it's a directory
-                    original_cwd = ftp.pwd()
-                    is_dir = False
-                    try:
-                        ftp.cwd(f"{remote_dir}/{name}")
-                        is_dir = True
-                        ftp.cwd(original_cwd)
-                    except Exception:  # nosec: B110
-                        pass
-
-                    if is_dir:
-                        entries.append((name, {"type": "dir"}))
-                    else:
-                        modify: Optional[str] = None
-                        try:
-                            modify = ftp.voidcmd(f"MDTM {remote_dir}/{name}").split()[1]
-                        except Exception:  # nosec: B110
-                            pass
-                        entries.append((name, {"type": "file", "modify": modify or ""}))
-            except Exception:
-                entries = []
-
-        for name, facts in entries:
-            if name in (".", ".."):
-                continue
-
-            if facts.get("type") == "file":
-                local_path = local_dir / name
-                remote_mtime_str = facts.get("modify")
-                should_download = False
-
-                if not local_path.exists():
-                    should_download = True
-                elif remote_mtime_str:
-                    try:
-                        remote_dt = datetime.datetime.strptime(
-                            remote_mtime_str[:14], "%Y%m%d%H%M%S"
-                        ).replace(tzinfo=datetime.timezone.utc)
-                        remote_mtime = remote_dt.timestamp()
-                        local_mtime = local_path.stat().st_mtime
-                        if remote_mtime > local_mtime:
-                            should_download = True
-                    except Exception:  # nosec: B110
-                        pass
-
-                if should_download:
-                    if callback:
-                        callback(f"Downloading {remote_dir}/{name} to {local_dir}")
-                    self.download(f"{remote_dir}/{name}", local_dir)
-                else:
-                    if callback:
-                        callback(f"Skipping {name} (already up to date)")
-
-            elif facts.get("type") == "dir" and recursive:
-                new_remote_dir = f"{remote_dir}/{name}".replace("//", "/")
-                new_local_dir = local_dir / name
-                self.pull(
-                    new_remote_dir, new_local_dir, recursive=True, callback=callback
-                )
+        s = DownloadSynchronizer(local_target, remote_target, opts)
+        s.run()
 
     def sync(
         self,
@@ -329,18 +200,15 @@ class WebspaceClient:
     ) -> None:
         """Synchronizes files bidirectionally between local_dir and remote_dir.
 
-        Performs a push followed by a pull, using the same timestamp-based rules.
-
         Args:
             local_dir: The local directory to sync.
             remote_dir: The remote directory to sync.
             recursive: Whether to sync directories recursively. Defaults to False.
             callback: An optional callback function for logging progress.
         """
-        if callback:
-            callback(f"Starting push: {local_dir} -> {remote_dir}")
-        self.push(local_dir, remote_dir, recursive=recursive, callback=callback)
+        local_target = FsTarget(str(local_dir))
+        remote_target = self._get_ftp_target(remote_dir)
+        opts = {"resolve": "skip", "verbose": 3}
 
-        if callback:
-            callback(f"Starting pull: {remote_dir} -> {local_dir}")
-        self.pull(remote_dir, local_dir, recursive=recursive, callback=callback)
+        s = BiDirSynchronizer(local_target, remote_target, opts)
+        s.run()
