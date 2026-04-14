@@ -1,31 +1,67 @@
 import os
 import datetime
 from pathlib import Path
-from ftplib import FTP_TLS
+from ftplib import FTP_TLS  # nosec: B402
 from typing import List, Optional
 
+
 class WebspaceClient:
+    """A client for interacting with a webspace via FTP_TLS.
+
+    Attributes:
+        host: The FTP server host.
+        username: The FTP username.
+        password: The FTP password.
+        ftp: The underlying FTP_TLS object.
+    """
+
     def __init__(self, host: str, username: str, password: str):
+        """Initializes the WebspaceClient.
+
+        Args:
+            host: The FTP server host.
+            username: The FTP username.
+            password: The FTP password.
+        """
         self.host = host
         self.username = username
         self.password = password
         self.ftp: Optional[FTP_TLS] = None
 
-    def __enter__(self):
+    def __enter__(self) -> "WebspaceClient":
+        """Enters the runtime context related to this object.
+
+        Returns:
+            The WebspaceClient instance.
+        """
         self.connect()
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Exits the runtime context related to this object.
+
+        Args:
+            exc_type: The exception type.
+            exc_val: The exception value.
+            exc_tb: The traceback.
+        """
         self.quit()
 
-    def connect(self):
+    def connect(self) -> FTP_TLS:
+        """Connects to the FTP server and logs in.
+
+        Returns:
+            The connected FTP_TLS instance.
+        """
         if self.ftp is None:
             self.ftp = FTP_TLS()
             self.ftp.connect(self.host)
             self.ftp.login(self.username, self.password)
             self.ftp.prot_p()
+        return self.ftp
 
-    def quit(self):
+    def quit(self) -> None:
+        """Gracefully closes the FTP connection."""
         if self.ftp is not None:
             try:
                 self.ftp.quit()
@@ -34,53 +70,63 @@ class WebspaceClient:
             self.ftp = None
 
     def ensure_remote_dir(self, remote_dir: str) -> None:
-        """
-        Recursively creates directories on the remote server (mkdir -p).
-        """
-        if not self.ftp:
-            self.connect()
+        """Recursively creates directories on the remote server (mkdir -p).
 
-        original_cwd = self.ftp.pwd()
+        Args:
+            remote_dir: The remote directory path to ensure.
+        """
+        ftp = self.connect()
+
+        original_cwd = ftp.pwd()
         try:
             parts = [p for p in remote_dir.split("/") if p]
             for part in parts:
                 try:
-                    self.ftp.cwd(part)
+                    ftp.cwd(part)
                 except Exception:
-                    self.ftp.mkd(part)
-                    self.ftp.cwd(part)
+                    ftp.mkd(part)
+                    ftp.cwd(part)
         finally:
-            self.ftp.cwd(original_cwd)
+            ftp.cwd(original_cwd)
 
     def upload(self, local_path: Path, remote_dir: str) -> None:
+        """Uploads a file to the remote server.
+
+        Args:
+            local_path: The path to the local file to upload.
+            remote_dir: The remote directory to upload to.
+
+        Raises:
+            FileNotFoundError: If the local file does not exist.
         """
-        Uploads a file to the remote server.
-        """
-        if not self.ftp:
-            self.connect()
+        ftp = self.connect()
 
         if not local_path.exists():
             raise FileNotFoundError(f"Local file not found: {local_path}")
 
         self.ensure_remote_dir(remote_dir)
 
-        original_cwd = self.ftp.pwd()
+        original_cwd = ftp.pwd()
         try:
-            self.ftp.cwd(remote_dir)
+            ftp.cwd(remote_dir)
             with open(local_path, "rb") as f:
-                self.ftp.storbinary(f"STOR {local_path.name}", f)
+                ftp.storbinary(f"STOR {local_path.name}", f)
         finally:
-            self.ftp.cwd(original_cwd)
+            ftp.cwd(original_cwd)
 
     def ls(self, remote_dir: str = ".") -> List[str]:
-        """
-        Lists files in the remote directory.
-        """
-        if not self.ftp:
-            self.connect()
+        """Lists files in the remote directory.
 
-        files = []
-        self.ftp.retrlines(f"NLST {remote_dir}", files.append)
+        Args:
+            remote_dir: The remote directory to list. Defaults to ".".
+
+        Returns:
+            A list of filenames in the directory.
+        """
+        ftp = self.connect()
+
+        files: List[str] = []
+        ftp.retrlines(f"NLST {remote_dir}", files.append)
         return files
 
     def push(
@@ -88,13 +134,17 @@ class WebspaceClient:
         local_dir: Path,
         remote_dir: str,
         recursive: bool = False,
-        callback=None
+        callback=None,
     ) -> None:
+        """Pushes new or updated files from local_dir to remote_dir.
+
+        Args:
+            local_dir: The local directory to push from.
+            remote_dir: The remote directory to push to.
+            recursive: Whether to push directories recursively. Defaults to False.
+            callback: An optional callback function for logging progress.
         """
-        Pushes new or updated files from local_dir to remote_dir.
-        """
-        if not self.ftp:
-            self.connect()
+        ftp = self.connect()
 
         if not local_dir.is_dir():
             raise ValueError(f"Local path is not a directory: {local_dir}")
@@ -102,7 +152,7 @@ class WebspaceClient:
         # Get remote files and their modification times
         remote_files = {}
         try:
-            for name, facts in self.ftp.mlsd(remote_dir):
+            for name, facts in ftp.mlsd(remote_dir):
                 if facts["type"] == "file":
                     # modify: timestamp in YYYYMMDDHHMMSS format
                     remote_files[name] = facts.get("modify")
@@ -112,13 +162,13 @@ class WebspaceClient:
                 names = self.ls(remote_dir)
                 for name in names:
                     try:
-                        timestamp = self.ftp.voidcmd(f"MDTM {remote_dir}/{name}").split()[1]
+                        timestamp = ftp.voidcmd(f"MDTM {remote_dir}/{name}").split()[1]
                         remote_files[name] = timestamp
                     except Exception:
                         remote_files[name] = None
             except Exception:
                 # remote_dir might not exist
-                pass
+                pass  # nosec: B110
 
         for entry in os.scandir(local_dir):
             if entry.is_file():
@@ -138,7 +188,9 @@ class WebspaceClient:
                 elif remote_mtime_str:
                     # MLSD format: YYYYMMDDHHMMSS[.sss]
                     try:
-                        remote_dt = datetime.datetime.strptime(remote_mtime_str[:14], "%Y%m%d%H%M%S").replace(tzinfo=datetime.timezone.utc)
+                        remote_dt = datetime.datetime.strptime(
+                            remote_mtime_str[:14], "%Y%m%d%H%M%S"
+                        ).replace(tzinfo=datetime.timezone.utc)
                         remote_mtime = remote_dt.timestamp()
                         # Local mtime is usually more precise.
                         # If local is strictly newer, upload.
@@ -147,7 +199,7 @@ class WebspaceClient:
                     except Exception:
                         # If we can't parse timestamp, assume we should upload to be safe?
                         # Or maybe not. Let's assume if we can't compare, we don't overwrite if it exists.
-                        pass
+                        pass  # nosec: B110
 
                 if should_upload:
                     if callback:
@@ -159,4 +211,6 @@ class WebspaceClient:
 
             elif entry.is_dir() and recursive:
                 new_remote_dir = f"{remote_dir}/{entry.name}".replace("//", "/")
-                self.push(Path(entry.path), new_remote_dir, recursive=True, callback=callback)
+                self.push(
+                    Path(entry.path), new_remote_dir, recursive=True, callback=callback
+                )
