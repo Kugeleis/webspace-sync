@@ -7,7 +7,10 @@ authors = [
     { name = "Kugeleis", email = "9948777+Kugeleis@users.noreply.github.com" }
 ]
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "python-box>=7.4.1",
+    "pyyaml>=6.0.3",
+]
 
 [project.scripts]
 webspace-sync = "webspace_sync:main"
