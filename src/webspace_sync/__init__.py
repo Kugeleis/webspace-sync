@@ -2,15 +2,21 @@ import argparse
 import os
 import sys
 from pathlib import Path
-from box import Box
+from box import Box  # type: ignore
 
 from .client import WebspaceClient
 
 __all__ = ["WebspaceClient"]
 
+
 def load_secrets(path: str = "config/secrets.yaml") -> Box:
-    """
-    Loads and returns the secrets from a YAML file.
+    """Loads and returns the secrets from a YAML file.
+
+    Args:
+        path: Path to the secrets YAML file.
+
+    Returns:
+        A Box object containing the secrets.
     """
     if not os.path.exists(path):
         print(f"Error: Secrets file not found at {path}", file=sys.stderr)
@@ -21,7 +27,9 @@ def load_secrets(path: str = "config/secrets.yaml") -> Box:
         print(f"Failed to load secrets from {path}: {e}", file=sys.stderr)
         sys.exit(1)
 
-def main():
+
+def main() -> None:
+    """Main entry point for the webspace_sync CLI."""
     parser = argparse.ArgumentParser(
         description="Webspace sync tool for uploading files and listing directories"
     )
@@ -57,7 +65,9 @@ def main():
     )
 
     # Push command
-    push_parser = subparsers.add_parser("push", help="Push new or updated files to a remote directory")
+    push_parser = subparsers.add_parser(
+        "push", help="Push new or updated files to a remote directory"
+    )
     push_parser.add_argument(
         "source",
         help="Local directory to push from",
@@ -83,9 +93,7 @@ def main():
     ftp_conf = secrets.webspace.ftp
 
     client = WebspaceClient(
-        host=ftp_conf.host,
-        username=ftp_conf.username,
-        password=ftp_conf.password
+        host=ftp_conf.host, username=ftp_conf.username, password=ftp_conf.password
     )
 
     try:
@@ -102,11 +110,12 @@ def main():
                     Path(args.source),
                     args.target,
                     recursive=args.recurse,
-                    callback=print
+                    callback=print,
                 )
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()
