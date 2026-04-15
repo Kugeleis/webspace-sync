@@ -37,17 +37,17 @@ def test_client_ls(mock_ftp_target):
     mock_target_instance = mock_ftp_target.return_value
     mock_entry = MagicMock()
     mock_entry.name = "file1.txt"
-    mock_target_instance.read_dir.return_value = [mock_entry]
+    mock_target_instance.get_dir.return_value = [mock_entry]
 
     client = WebspaceClient("host", "user", "pass")
     files = client.ls("some_dir")
 
     assert files == ["file1.txt"]
     mock_ftp_target.assert_called_with(
-        "some_dir", "host", username="user", password="pass", tls=True
+        "/some_dir", "host", username="user", password="pass", tls=True
     )
     mock_target_instance.open.assert_called_once()
-    mock_target_instance.read_dir.assert_called_once()
+    mock_target_instance.get_dir.assert_called_once()
     mock_target_instance.close.assert_called_once()
 
 
@@ -62,7 +62,7 @@ def test_client_upload_file(
 
     mock_fs_target.assert_called_once_with(str(tmp_path))
     mock_ftp_target.assert_called_once_with(
-        "remote/dir", "host", username="user", password="pass", tls=True
+        "/remote/dir", "host", username="user", password="pass", tls=True
     )
     mock_upload_sync.assert_called_once()
     mock_upload_sync.return_value.run.assert_called_once()
@@ -77,7 +77,7 @@ def test_client_push(mock_ftp_target, mock_fs_target, mock_upload_sync, tmp_path
 
     mock_fs_target.assert_called_once_with(str(local_dir))
     mock_ftp_target.assert_called_once_with(
-        "remote", "host", username="user", password="pass", tls=True
+        "/remote", "host", username="user", password="pass", tls=True
     )
     mock_upload_sync.assert_called_once()
 
@@ -91,7 +91,7 @@ def test_client_pull(mock_ftp_target, mock_fs_target, mock_download_sync, tmp_pa
 
     mock_fs_target.assert_called_once_with(str(local_dir))
     mock_ftp_target.assert_called_once_with(
-        "remote", "host", username="user", password="pass", tls=True
+        "/remote", "host", username="user", password="pass", tls=True
     )
     mock_download_sync.assert_called_once()
 
@@ -105,6 +105,6 @@ def test_client_sync(mock_ftp_target, mock_fs_target, mock_bidir_sync, tmp_path)
 
     mock_fs_target.assert_called_once_with(str(local_dir))
     mock_ftp_target.assert_called_once_with(
-        "remote", "host", username="user", password="pass", tls=True
+        "/remote", "host", username="user", password="pass", tls=True
     )
     mock_bidir_sync.assert_called_once()

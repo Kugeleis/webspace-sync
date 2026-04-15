@@ -78,8 +78,8 @@ def main() -> None:
     ls_parser.add_argument(
         "remote_dir",
         nargs="?",
-        default=".",
-        help="Remote directory to list (default: .)",
+        default="/",
+        help="Remote directory to list (default: /)",
     )
 
     # Push command

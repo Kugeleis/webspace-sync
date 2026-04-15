@@ -1,5 +1,5 @@
+import posixpath
 from pathlib import Path
-from typing import List
 
 from ftpsync.ftp_target import FTPTarget  # type: ignore
 from ftpsync.synchronizers import (  # type: ignore
@@ -59,7 +59,7 @@ class WebspaceClient:
             An FTPTarget instance.
         """
         return FTPTarget(
-            remote_dir,
+            sanitize_remote_path(remote_dir),
             self.host,
             username=self.username,
             password=self.password,
@@ -108,6 +108,7 @@ class WebspaceClient:
         # pyftpsync download works on directories.
         # To download a single file, we sync the remote parent and match the file.
 
+        remote_path = sanitize_remote_path(remote_path)
         remote_parent = str(Path(remote_path).parent)
         remote_name = Path(remote_path).name
 
@@ -122,11 +123,11 @@ class WebspaceClient:
         s = DownloadSynchronizer(local_target, remote_target, opts)
         s.run()
 
-    def ls(self, remote_dir: str = ".") -> List[str]:
+    def ls(self, remote_dir: str = "/") -> list[str]:
         """Lists files in the remote directory.
 
         Args:
-            remote_dir: The remote directory to list. Defaults to ".".
+            remote_dir: The remote directory to list. Defaults to "/".
 
         Returns:
             A list of filenames in the directory.
@@ -134,7 +135,7 @@ class WebspaceClient:
         target = self._get_ftp_target(remote_dir)
         target.open()
         try:
-            entries = target.read_dir()
+            entries = target.get_dir()
             return [e.name for e in entries]
         finally:
             target.close()
@@ -212,3 +213,29 @@ class WebspaceClient:
 
         s = BiDirSynchronizer(local_target, remote_target, opts)
         s.run()
+
+
+def sanitize_remote_path(path: str) -> str:
+    """Sanitizes a remote path by ensuring it is absolute and normalized.
+
+    This ensures that components like '..', './', and multiple slashes are
+    handled correctly. It always returns a path starting with '/'.
+
+    Args:
+        path: The remote path to sanitize.
+
+    Returns:
+        The sanitized and normalized remote path.
+    """
+    path = path.strip()
+    if not path:
+        return "/"
+    # Ensure it is treated as absolute for posixpath.normpath
+    if not path.startswith("/"):
+        path = "/" + path
+    sanitized = posixpath.normpath(path)
+    # Special case: posixpath.normpath('//') remains '//' on some systems,
+    # but for FTP we typically want '/'
+    if sanitized.startswith("//") and not sanitized.startswith("///"):
+        sanitized = "/" + sanitized.lstrip("/")
+    return sanitized
