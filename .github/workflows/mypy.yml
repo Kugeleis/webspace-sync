@@ -1,4 +1,4 @@
-name: Tests
+name: Mypy
 
 on:
   pull_request:
@@ -7,7 +7,7 @@ on:
       - main
 
 jobs:
-  test:
+  mypy:
     runs-on: ubuntu-latest
 
     steps:
@@ -35,5 +35,5 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-extras --dev
 
-      - name: Run tests
-        run: uv run pytest
+      - name: Type check with mypy
+        run: uv run mypy src/
