@@ -71,6 +71,13 @@ def main() -> None:
         action="store_true",
         help="Delete remote files that don't exist locally in the target directory",
     )
+    upload_parser.add_argument(
+        "--resolve",
+        "-r",
+        choices=["local", "skip", "ask"],
+        default="skip",
+        help="Conflict resolution strategy (default: skip)",
+    )
 
     # Download command
     download_parser = subparsers.add_parser("download", help="Download a single file")
@@ -95,6 +102,13 @@ def main() -> None:
         "-D",
         action="store_true",
         help="Delete local files that don't exist remotely in the source directory",
+    )
+    download_parser.add_argument(
+        "--resolve",
+        "-r",
+        choices=["remote", "skip", "ask"],
+        default="skip",
+        help="Conflict resolution strategy (default: skip)",
     )
 
     # Ls command
@@ -136,6 +150,13 @@ def main() -> None:
         action="store_true",
         help="Delete remote files that don't exist locally",
     )
+    push_parser.add_argument(
+        "--resolve",
+        "-r",
+        choices=["local", "skip", "ask"],
+        default="skip",
+        help="Conflict resolution strategy (default: skip)",
+    )
 
     # Pull command
     pull_parser = subparsers.add_parser(
@@ -167,6 +188,13 @@ def main() -> None:
         "-D",
         action="store_true",
         help="Delete local files that don't exist remotely",
+    )
+    pull_parser.add_argument(
+        "--resolve",
+        "-r",
+        choices=["remote", "skip", "ask"],
+        default="skip",
+        help="Conflict resolution strategy (default: skip)",
     )
 
     # Sync command
@@ -201,7 +229,8 @@ def main() -> None:
     )
     sync_parser.add_argument(
         "--resolve",
-        choices=["local", "remote", "new", "old", "skip"],
+        "-r",
+        choices=["local", "remote", "new", "old", "skip", "ask"],
         default="skip",
         help="Conflict resolution strategy (default: skip)",
     )
@@ -227,6 +256,7 @@ def main() -> None:
                     args.remote_dir,
                     force=args.force,
                     delete=args.delete,
+                    resolve=args.resolve,
                 )
                 print(f"Successfully uploaded {args.file} to {args.remote_dir}")
             elif args.command == "ls":
@@ -240,6 +270,7 @@ def main() -> None:
                     recursive=args.recurse,
                     force=args.force,
                     delete=args.delete,
+                    resolve=args.resolve,
                     callback=print,
                 )
             elif args.command == "sync":
@@ -258,6 +289,7 @@ def main() -> None:
                     Path(args.local_dir),
                     force=args.force,
                     delete=args.delete,
+                    resolve=args.resolve,
                 )
                 print(f"Successfully downloaded {args.remote_path} to {args.local_dir}")
             elif args.command == "pull":
@@ -267,6 +299,7 @@ def main() -> None:
                     recursive=args.recurse,
                     force=args.force,
                     delete=args.delete,
+                    resolve=args.resolve,
                     callback=print,
                 )
     except Exception as e:

@@ -117,13 +117,14 @@ def test_upload_force_delete(
     local_file.write_text("hello")
 
     client = WebspaceClient("host", "user", "pass")
-    client.upload(local_file, "remote/dir", force=True, delete=True)
+    client.upload(local_file, "remote/dir", force=True, delete=True, resolve="local")
 
     mock_upload_sync.assert_called_once()
     args, kwargs = mock_upload_sync.call_args
     opts = args[2]
     assert opts["force"] is True
     assert opts["delete"] is True
+    assert opts["resolve"] == "local"
     assert opts["match"] == "test.txt"
 
 
@@ -134,13 +135,16 @@ def test_download_force_delete(
     local_dir.mkdir()
 
     client = WebspaceClient("host", "user", "pass")
-    client.download("remote/file.txt", local_dir, force=True, delete=True)
+    client.download(
+        "remote/file.txt", local_dir, force=True, delete=True, resolve="remote"
+    )
 
     mock_download_sync.assert_called_once()
     args, kwargs = mock_download_sync.call_args
     opts = args[2]
     assert opts["force"] is True
     assert opts["delete"] is True
+    assert opts["resolve"] == "remote"
     assert opts["match"] == "file.txt"
 
 
@@ -149,13 +153,14 @@ def test_push_force_delete(mock_ftp_target, mock_fs_target, mock_upload_sync, tm
     local_dir.mkdir()
 
     client = WebspaceClient("host", "user", "pass")
-    client.push(local_dir, "remote", force=True, delete=True)
+    client.push(local_dir, "remote", force=True, delete=True, resolve="local")
 
     mock_upload_sync.assert_called_once()
     args, kwargs = mock_upload_sync.call_args
     opts = args[2]
     assert opts["force"] is True
     assert opts["delete"] is True
+    assert opts["resolve"] == "local"
 
 
 def test_pull_force_delete(
@@ -165,13 +170,14 @@ def test_pull_force_delete(
     local_dir.mkdir()
 
     client = WebspaceClient("host", "user", "pass")
-    client.pull("remote", local_dir, force=True, delete=True)
+    client.pull("remote", local_dir, force=True, delete=True, resolve="remote")
 
     mock_download_sync.assert_called_once()
     args, kwargs = mock_download_sync.call_args
     opts = args[2]
     assert opts["force"] is True
     assert opts["delete"] is True
+    assert opts["resolve"] == "remote"
 
 
 def test_sync_force_delete_resolve(
