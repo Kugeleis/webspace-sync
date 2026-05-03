@@ -66,12 +66,20 @@ class WebspaceClient:
             tls=True,
         )
 
-    def upload(self, local_path: Path, remote_dir: str) -> None:
+    def upload(
+        self,
+        local_path: Path,
+        remote_dir: str,
+        force: bool = False,
+        delete: bool = False,
+    ) -> None:
         """Uploads a file or directory to the remote server.
 
         Args:
             local_path: The path to the local file or directory to upload.
             remote_dir: The remote directory to upload to.
+            force: Whether to overwrite newer remote files. Defaults to False.
+            delete: Whether to delete remote files that don't exist locally. Defaults to False.
 
         Raises:
             FileNotFoundError: If the local path does not exist.
@@ -87,21 +95,31 @@ class WebspaceClient:
             opts = {
                 "match": local_path.name,
                 "verbose": 3,
+                "force": force,
+                "delete": delete,
             }
         else:
             local_target = FsTarget(str(local_path))
             remote_target = self._get_ftp_target(remote_dir)
-            opts = {"verbose": 3}
+            opts = {"verbose": 3, "force": force, "delete": delete}
 
         s = UploadSynchronizer(local_target, remote_target, opts)
         s.run()
 
-    def download(self, remote_path: str, local_dir: Path) -> None:
+    def download(
+        self,
+        remote_path: str,
+        local_dir: Path,
+        force: bool = False,
+        delete: bool = False,
+    ) -> None:
         """Downloads a file or directory from the remote server.
 
         Args:
             remote_path: The path to the remote file or directory to download.
             local_dir: The local directory to download to.
+            force: Whether to overwrite newer local files. Defaults to False.
+            delete: Whether to delete local files that don't exist remotely. Defaults to False.
         """
         # If remote_path is a file, we can't easily tell without trying to list it
         # or assuming based on extension/context.
@@ -119,6 +137,8 @@ class WebspaceClient:
         opts = {
             "match": remote_name,
             "verbose": 3,
+            "force": force,
+            "delete": delete,
         }
         s = DownloadSynchronizer(local_target, remote_target, opts)
         s.run()
@@ -145,6 +165,8 @@ class WebspaceClient:
         local_dir: Path,
         remote_dir: str,
         recursive: bool = False,
+        force: bool = False,
+        delete: bool = False,
         callback=None,
     ) -> None:
         """Pushes new or updated files from local_dir to remote_dir.
@@ -153,11 +175,13 @@ class WebspaceClient:
             local_dir: The local directory to push from.
             remote_dir: The remote directory to push to.
             recursive: Whether to push directories recursively. Defaults to False.
+            force: Whether to overwrite newer remote files. Defaults to False.
+            delete: Whether to delete remote files that don't exist locally. Defaults to False.
             callback: An optional callback function for logging progress (unused by pyftpsync natively, but kept for API compatibility).
         """
         local_target = FsTarget(str(local_dir))
         remote_target = self._get_ftp_target(remote_dir)
-        opts = {"verbose": 3}
+        opts = {"verbose": 3, "force": force, "delete": delete}
         # pyftpsync is recursive by default unless limited.
         # If recursive is False, we might need to handle it.
         # However, pyftpsync's synchronizers generally recurse.
@@ -175,6 +199,8 @@ class WebspaceClient:
         remote_dir: str,
         local_dir: Path,
         recursive: bool = False,
+        force: bool = False,
+        delete: bool = False,
         callback=None,
     ) -> None:
         """Pulls new or updated files from remote_dir to local_dir.
@@ -183,11 +209,13 @@ class WebspaceClient:
             remote_dir: The remote directory to pull from.
             local_dir: The local directory to pull to.
             recursive: Whether to pull directories recursively. Defaults to False.
+            force: Whether to overwrite newer local files. Defaults to False.
+            delete: Whether to delete local files that don't exist remotely. Defaults to False.
             callback: An optional callback function for logging progress.
         """
         local_target = FsTarget(str(local_dir))
         remote_target = self._get_ftp_target(remote_dir)
-        opts = {"verbose": 3}
+        opts = {"verbose": 3, "force": force, "delete": delete}
 
         s = DownloadSynchronizer(local_target, remote_target, opts)
         s.run()
@@ -197,6 +225,9 @@ class WebspaceClient:
         local_dir: Path,
         remote_dir: str,
         recursive: bool = False,
+        force: bool = False,
+        delete: bool = False,
+        resolve: str = "skip",
         callback=None,
     ) -> None:
         """Synchronizes files bidirectionally between local_dir and remote_dir.
@@ -205,11 +236,19 @@ class WebspaceClient:
             local_dir: The local directory to sync.
             remote_dir: The remote directory to sync.
             recursive: Whether to sync directories recursively. Defaults to False.
+            force: Whether to overwrite newer files on either side. Defaults to False.
+            delete: Whether to delete files that don't exist on the other side. Defaults to False.
+            resolve: Conflict resolution strategy. Defaults to "skip".
             callback: An optional callback function for logging progress.
         """
         local_target = FsTarget(str(local_dir))
         remote_target = self._get_ftp_target(remote_dir)
-        opts = {"resolve": "skip", "verbose": 3}
+        opts = {
+            "resolve": resolve,
+            "verbose": 3,
+            "force": force,
+            "delete": delete,
+        }
 
         s = BiDirSynchronizer(local_target, remote_target, opts)
         s.run()

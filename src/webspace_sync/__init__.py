@@ -48,7 +48,7 @@ def main() -> None:
     subparsers = parser.add_subparsers(dest="command", help="Commands")
 
     # Upload command
-    upload_parser = subparsers.add_parser("upload", help="Upload a file")
+    upload_parser = subparsers.add_parser("upload", help="Upload a single file")
     upload_parser.add_argument(
         "file",
         help="Path to the file to upload",
@@ -59,9 +59,21 @@ def main() -> None:
         default="data/raw",
         help="Remote directory to upload to (default: data/raw)",
     )
+    upload_parser.add_argument(
+        "--force",
+        "-F",
+        action="store_true",
+        help="Overwrite remote files even if they are newer",
+    )
+    upload_parser.add_argument(
+        "--delete",
+        "-D",
+        action="store_true",
+        help="Delete remote files that don't exist locally in the target directory",
+    )
 
     # Download command
-    download_parser = subparsers.add_parser("download", help="Download a file")
+    download_parser = subparsers.add_parser("download", help="Download a single file")
     download_parser.add_argument(
         "remote_path",
         help="Path to the remote file to download",
@@ -71,6 +83,18 @@ def main() -> None:
         "-d",
         default=".",
         help="Local directory to download to (default: .)",
+    )
+    download_parser.add_argument(
+        "--force",
+        "-F",
+        action="store_true",
+        help="Overwrite local files even if they are newer",
+    )
+    download_parser.add_argument(
+        "--delete",
+        "-D",
+        action="store_true",
+        help="Delete local files that don't exist remotely in the source directory",
     )
 
     # Ls command
@@ -84,7 +108,7 @@ def main() -> None:
 
     # Push command
     push_parser = subparsers.add_parser(
-        "push", help="Push new or updated files to a remote directory"
+        "push", help="Push new or updated files to a remote directory (Local -> Remote)"
     )
     push_parser.add_argument(
         "source",
@@ -100,10 +124,23 @@ def main() -> None:
         action="store_true",
         help="Push directories recursively",
     )
+    push_parser.add_argument(
+        "--force",
+        "-F",
+        action="store_true",
+        help="Overwrite remote files even if they are newer",
+    )
+    push_parser.add_argument(
+        "--delete",
+        "-D",
+        action="store_true",
+        help="Delete remote files that don't exist locally",
+    )
 
     # Pull command
     pull_parser = subparsers.add_parser(
-        "pull", help="Pull new or updated files from a remote directory"
+        "pull",
+        help="Pull new or updated files from a remote directory (Remote -> Local)",
     )
     pull_parser.add_argument(
         "source",
@@ -119,10 +156,22 @@ def main() -> None:
         action="store_true",
         help="Pull directories recursively",
     )
+    pull_parser.add_argument(
+        "--force",
+        "-F",
+        action="store_true",
+        help="Overwrite local files even if they are newer",
+    )
+    pull_parser.add_argument(
+        "--delete",
+        "-D",
+        action="store_true",
+        help="Delete local files that don't exist remotely",
+    )
 
     # Sync command
     sync_parser = subparsers.add_parser(
-        "sync", help="Synchronize files bidirectionally (push then pull)"
+        "sync", help="Synchronize files bidirectionally (Push then Pull)"
     )
     sync_parser.add_argument(
         "local_dir",
@@ -137,6 +186,24 @@ def main() -> None:
         "-R",
         action="store_true",
         help="Sync directories recursively",
+    )
+    sync_parser.add_argument(
+        "--force",
+        "-F",
+        action="store_true",
+        help="Overwrite newer files on either side",
+    )
+    sync_parser.add_argument(
+        "--delete",
+        "-D",
+        action="store_true",
+        help="Delete files that don't exist on the other side",
+    )
+    sync_parser.add_argument(
+        "--resolve",
+        choices=["local", "remote", "new", "old", "skip"],
+        default="skip",
+        help="Conflict resolution strategy (default: skip)",
     )
 
     args = parser.parse_args()
@@ -155,7 +222,12 @@ def main() -> None:
     try:
         with client:
             if args.command == "upload":
-                client.upload(Path(args.file), args.remote_dir)
+                client.upload(
+                    Path(args.file),
+                    args.remote_dir,
+                    force=args.force,
+                    delete=args.delete,
+                )
                 print(f"Successfully uploaded {args.file} to {args.remote_dir}")
             elif args.command == "ls":
                 files = client.ls(args.remote_dir)
@@ -166,6 +238,8 @@ def main() -> None:
                     Path(args.source),
                     args.target,
                     recursive=args.recurse,
+                    force=args.force,
+                    delete=args.delete,
                     callback=print,
                 )
             elif args.command == "sync":
@@ -173,16 +247,26 @@ def main() -> None:
                     Path(args.local_dir),
                     args.remote_dir,
                     recursive=args.recurse,
+                    force=args.force,
+                    delete=args.delete,
+                    resolve=args.resolve,
                     callback=print,
                 )
             elif args.command == "download":
-                client.download(args.remote_path, Path(args.local_dir))
+                client.download(
+                    args.remote_path,
+                    Path(args.local_dir),
+                    force=args.force,
+                    delete=args.delete,
+                )
                 print(f"Successfully downloaded {args.remote_path} to {args.local_dir}")
             elif args.command == "pull":
                 client.pull(
                     args.source,
                     Path(args.target),
                     recursive=args.recurse,
+                    force=args.force,
+                    delete=args.delete,
                     callback=print,
                 )
     except Exception as e:

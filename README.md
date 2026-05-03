@@ -47,18 +47,33 @@ uv run webspace_sync ls data/raw
 #### Push a directory
 
 ```bash
-uv run webspace_sync push ./local_dir data/remote_dir --recurse
+uv run webspace_sync push ./local_dir data/remote_dir --recurse --force --delete
 ```
 
-This command will only upload files that are new or have a newer timestamp than the remote version.
+- `--recurse`: Push directories recursively.
+- `--force`: Always replace files on the remote target, even if the local version is older.
+- `--delete`: Delete files on the remote target that don't exist locally.
+
+#### Pull a directory
+
+```bash
+uv run webspace_sync pull data/remote_dir ./local_dir --recurse --force --delete
+```
+
+- `--recurse`: Pull directories recursively.
+- `--force`: Always replace local files with the remote versions, even if the local files are newer.
+- `--delete`: Delete local files that don't exist on the remote server.
 
 #### Sync a directory (bidirectional)
 
 ```bash
-uv run webspace_sync sync ./local_dir data/remote_dir --recurse
+uv run webspace_sync sync ./local_dir data/remote_dir --recurse --resolve remote
 ```
 
-This command performs a `push` followed by a `pull`.
+- `--recurse`: Sync directories recursively.
+- `--force`: Force overwrite on both sides.
+- `--delete`: Delete unmatched files on both sides.
+- `--resolve`: Conflict resolution strategy (`local`, `remote`, `new`, `old`, `skip`).
 
 ### Python API
 
@@ -71,9 +86,16 @@ from pathlib import Path
 client = WebspaceClient(host="ftp.example.com", username="user", password="pass")
 
 with client:
-    client.upload(Path("local_file.txt"), "remote/dir")
-    client.push(Path("./local_dir"), "remote/dir", recursive=True, callback=print)
-    client.sync(Path("./local_dir"), "remote/dir", recursive=True, callback=print)
+    # Upload with force and delete
+    client.upload(Path("local_file.txt"), "remote/dir", force=True, delete=True)
+
+    # Push/Pull with new options
+    client.push(Path("./local_dir"), "remote/dir", recursive=True, force=True, delete=True)
+    client.pull("remote/dir", Path("./local_dir"), recursive=True, force=True, delete=True)
+
+    # Bidirectional sync with conflict resolution
+    client.sync(Path("./local_dir"), "remote/dir", recursive=True, resolve="remote")
+
     files = client.ls("remote/dir")
     print(files)
 ```

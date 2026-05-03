@@ -108,3 +108,84 @@ def test_client_sync(mock_ftp_target, mock_fs_target, mock_bidir_sync, tmp_path)
         "/remote", "host", username="user", password="pass", tls=True
     )
     mock_bidir_sync.assert_called_once()
+
+
+def test_upload_force_delete(
+    mock_ftp_target, mock_fs_target, mock_upload_sync, tmp_path
+):
+    local_file = tmp_path / "test.txt"
+    local_file.write_text("hello")
+
+    client = WebspaceClient("host", "user", "pass")
+    client.upload(local_file, "remote/dir", force=True, delete=True)
+
+    mock_upload_sync.assert_called_once()
+    args, kwargs = mock_upload_sync.call_args
+    opts = args[2]
+    assert opts["force"] is True
+    assert opts["delete"] is True
+    assert opts["match"] == "test.txt"
+
+
+def test_download_force_delete(
+    mock_ftp_target, mock_fs_target, mock_download_sync, tmp_path
+):
+    local_dir = tmp_path / "local"
+    local_dir.mkdir()
+
+    client = WebspaceClient("host", "user", "pass")
+    client.download("remote/file.txt", local_dir, force=True, delete=True)
+
+    mock_download_sync.assert_called_once()
+    args, kwargs = mock_download_sync.call_args
+    opts = args[2]
+    assert opts["force"] is True
+    assert opts["delete"] is True
+    assert opts["match"] == "file.txt"
+
+
+def test_push_force_delete(mock_ftp_target, mock_fs_target, mock_upload_sync, tmp_path):
+    local_dir = tmp_path / "local"
+    local_dir.mkdir()
+
+    client = WebspaceClient("host", "user", "pass")
+    client.push(local_dir, "remote", force=True, delete=True)
+
+    mock_upload_sync.assert_called_once()
+    args, kwargs = mock_upload_sync.call_args
+    opts = args[2]
+    assert opts["force"] is True
+    assert opts["delete"] is True
+
+
+def test_pull_force_delete(
+    mock_ftp_target, mock_fs_target, mock_download_sync, tmp_path
+):
+    local_dir = tmp_path / "local"
+    local_dir.mkdir()
+
+    client = WebspaceClient("host", "user", "pass")
+    client.pull("remote", local_dir, force=True, delete=True)
+
+    mock_download_sync.assert_called_once()
+    args, kwargs = mock_download_sync.call_args
+    opts = args[2]
+    assert opts["force"] is True
+    assert opts["delete"] is True
+
+
+def test_sync_force_delete_resolve(
+    mock_ftp_target, mock_fs_target, mock_bidir_sync, tmp_path
+):
+    local_dir = tmp_path / "local"
+    local_dir.mkdir()
+
+    client = WebspaceClient("host", "user", "pass")
+    client.sync(local_dir, "remote", force=True, delete=True, resolve="remote")
+
+    mock_bidir_sync.assert_called_once()
+    args, kwargs = mock_bidir_sync.call_args
+    opts = args[2]
+    assert opts["force"] is True
+    assert opts["delete"] is True
+    assert opts["resolve"] == "remote"
